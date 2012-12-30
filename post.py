@@ -1,7 +1,9 @@
-import twitter
+from twython import Twython, TwythonError
 from optparse import OptionParser
 import os
 import random
+import pprint
+import time
 
 parser = OptionParser()
 parser.add_option('--consumer_key', dest='consumer_key')
@@ -26,41 +28,46 @@ if options.consumer_key == None:
   print "No consumer key"
   exit()
 
-api = twitter.Api(consumer_key=options.consumer_key,
-                  consumer_secret=options.consumer_secret,
-                  access_token_key=options.access_token_key,
-                  access_token_secret=options.access_token_secret)
-#print api.VerifyCredentials()
+pp = pprint.PrettyPrinter(depth=6)
 
+api = Twython(app_key=options.consumer_key,
+              app_secret=options.consumer_secret,
+              oauth_token=options.access_token_key,
+              oauth_token_secret=options.access_token_secret)
 
-#for status in api.GetUserTimeline('bucketobytes')
+rates = api.getRateLimitStatus()
+remaining_hits = rates['remaining_hits']
+rate_reset = rates['reset_time_in_seconds']
+print 'Rate limit: ' + str(remaining_hits)
+
+current_user = api.verifyCredentials()
 
 fortunes = open('fortunes').read().split('\n%\n')
 if len(fortunes) == 0:
   exit()
 
-followers = api.GetFollowerIDs()[u'ids']
-following = api.GetFriendIDs()[u'ids']
-for  follower in followers:
-  if follower not in following:
-    api.CreateFriendship(follower)
+for fortune in fortunes:
+  if len(fortune) > 140:
+    fortunes.remove(fortune)
 
-last_reply = None
-if os.path.exists('last_reply'):
-  last_reply_file = open('last_reply', 'r')
-  last_reply = last_reply_file.read()
-  last_reply_file.close()
-  os.remove('last_reply')
+def followed(follow):
+  source_id = follow['source']['id_str']
+  target_id = follow['target']['id_str']
+  new_id = ""
+  if source_id != current_user['id_str']:
+    new_id = source_id
+  elif target_id != current_user['id_str']:
+    new_id = target_id
+    
+  print 'FRIEND: ' + new_id
+  api.createFriendship(user_id=new_id)
 
-mentions = None
+def cc(status):
+  api.reTweet(id=status['id_str'])
+  remaining_hits = remaining_hits-1
 
-if last_reply != None and last_reply != "":
-  mentions = api.GetMentions(since_id=last_reply)
-else:
-  mentions = api.GetMentions()
-
-for status in reversed(mentions):
-  user = status.user.screen_name
+def reply(status):
+  user = status['user']['id_str']
   max_length = 140 - len(user)-2
   content = random.choice(fortunes)
   count = 0
@@ -68,20 +75,47 @@ for status in reversed(mentions):
     if count > 1000:
       break
     content = random.choice(fortunes)
+  content = '@' + status['user']['screen_name'] + ' ' + content
   print content
-  api.PostUpdate(u'@'+unicode(user)+u' '+unicode(content), in_reply_to_status_id=status.id)
-  last_reply = status.id
+  api.updateStatus(status=content, in_reply_to_status_id=status['id_str'])
+  remaining_hits = remaining_hits-1
 
-last_reply_file = open('last_reply', 'w')
-last_reply_file.write(str(last_reply))
-last_reply_file.close()
+def mentioned(status):
+  if '#cc' in status['text']:
+    cc(status)
+  else:
+    reply(status)
 
-for fortune in fortunes:
-  if len(fortune) > 140:
-    fortunes.remove(fortune)
 
-content = random.choice(fortunes)
+def on_results(results):
+  global rate_reset
+  global remaining_hits
+  pp.pprint(results)
+  if remaining_hits <= 0:
+    print "hit my limit!"
+    return
+  if time.gmtime() > rate_reset:
+    rates = api.getRateLimitStatus()
+    remaining_hits = rates['remaining_hits']
+    rate_reset = rates['reset_time_in_seconds']
+    print 'Rate limit: ' + str(remaining_hits)
+  try:
+    if results.has_key('event'):
+      if results['event'] == 'follow':
+        followed(results)
+    elif results.has_key('entities'):
+        return
+      if results['user']['id_str'] == current_user['id_str']:
+        return
+      if results['entities'].has_key('user_mentions'):
+        for user_mention in results['entities']['user_mentions']:
+          if user_mention['id_str'] == current_user['id_str']:
+            mentioned(results)
+            break
+  except TwythonError:
+    api.updateStatus(status='@seepel I encountered an error!')
 
-if content != None and content != "":
-  status = api.PostUpdate(content)
-  print status.text
+try:
+  api.stream({ 'endpoint' : 'https://userstream.twitter.com/1.1/user.json' }, on_results)
+except TwythonError:
+  api.updateStatus(status='@seepel I have crashed!')
