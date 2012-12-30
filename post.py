@@ -104,7 +104,6 @@ def on_results(results):
       if results['event'] == 'follow':
         followed(results)
     elif results.has_key('entities'):
-        return
       if results['user']['id_str'] == current_user['id_str']:
         return
       if results['entities'].has_key('user_mentions'):
