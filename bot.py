@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from twython import Twython, TwythonError
 from optparse import OptionParser
 import os
@@ -11,6 +12,8 @@ import stream
 from fortune import FortuneComposer
 import simulate
 import follow
+from daemon import Daemon
+import sys
 
 twitter_http_status_codes = {
     200: ('OK', 'Success!'),
@@ -34,53 +37,71 @@ parser.add_option('--access_token_key', dest='access_token_key')
 parser.add_option('--access_token_secret', dest='access_token_secret')
 (options, args) = parser.parse_args()
 
-if options.consumer_key == None:
-  print "No consumer key"
-  exit()
+if sys.argv[1] == 'start':
+  if options.consumer_key == None:
+    print "No consumer key"
+    exit()
 
-if options.consumer_secret == None:
-  print "No consumer secret"
-  exit()
+  if options.consumer_secret == None:
+    print "No consumer secret"
+    exit()
 
-if options.access_token_key == None:
-  print "No access_token key"
-  exit()
+  if options.access_token_key == None:
+    print "No access_token key"
+    exit()
+  
+  if options.consumer_key == None:
+    print "No consumer key"
+    exit()
 
-if options.consumer_key == None:
-  print "No consumer key"
-  exit()
+class Bot(Daemon):
+  def run(self):
+    pp = pprint.PrettyPrinter(depth=6)
 
-pp = pprint.PrettyPrinter(depth=6)
+    api = Twython(app_key=options.consumer_key,
+                  app_secret=options.consumer_secret,
+                  oauth_token=options.access_token_key,
+                  oauth_token_secret=options.access_token_secret)
 
-api = Twython(app_key=options.consumer_key,
-              app_secret=options.consumer_secret,
-              oauth_token=options.access_token_key,
-              oauth_token_secret=options.access_token_secret)
+    #do_simulate = True
+    do_simulate = False
+  
+    current_user = { 'id_str' : '1041065317' }
+    if not do_simulate:
+      current_user = api.verifyCredentials()
+      pp.pprint(current_user)
 
-#do_simulate = True
-do_simulate = False
+    fortuneComposer = FortuneComposer()
+    followController = follow.FollowController([ follow.FollowComposer(current_user) ], current_user=current_user)
+    retweetController = retweet.RetweetController([ retweet.RetweetComposer() ], current_user=current_user)
+    replyController = reply.ReplyController([ fortuneComposer ], current_user=current_user)
+    postController = post.PostController([ fortuneComposer ], current_user=current_user)
+    default_time_to_sleep = 1
+    if do_simulate:
+      default_time_to_sleep = 1
+ 
+    user_stream = stream.Stream(api, 
+                                { 'endpoint' : 'https://userstream.twitter.com/1.1/user.json', 'track' : 'bucketobytes' }, 
+                                [ followController, retweetController, replyController, postController ],
+                                default_time_to_sleep,
+                                do_simulate)
 
-current_user = { 'id_str' : '1041065317' }
-if not do_simulate:
-  current_user = api.verifyCredentials()
-  pp.pprint(current_user)
+    user_stream.connectStream()
 
-fortuneComposer = FortuneComposer()
-followController = follow.FollowController([ follow.FollowComposer(current_user) ], current_user=current_user)
-retweetController = retweet.RetweetController([ retweet.RetweetComposer() ], current_user=current_user)
-replyController = reply.ReplyController([ fortuneComposer ], current_user=current_user)
-postController = post.PostController([ fortuneComposer ], current_user=current_user)
-default_time_to_sleep = 1
-if do_simulate:
-  default_time_to_sleep = 1
+if __name__ == "__main__":
+  daemon = Bot('/tmp/bot.pid')
 
-user_stream = stream.Stream(api, 
-                            { 'endpoint' : 'https://userstream.twitter.com/1.1/user.json', 'track' : 'bucketobytes' }, 
-                            [ followController, retweetController, replyController, postController ],
-                            default_time_to_sleep,
-                            do_simulate)
-#for i in range(20):
-#  for mention in simulate.mentions:
-#    user_stream.postQueue.queue.put(mention)
-
-user_stream.connectStream()
+  if len(sys.argv) >= 2:
+    if 'start' == sys.argv[1]:
+      daemon.start()
+    elif 'stop' == sys.argv[1]:
+      daemon.stop()
+    elif 'debug' == sys.argv[1]:
+      daemon.run()
+    else:
+      print 'Unknown command'
+      sys.exit(2)
+    sys.exit(0)
+  else:
+    print 'usage: %s start/stop/restart' % sys.argv[0]
+    sys.exit(2)

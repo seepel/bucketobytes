@@ -1,9 +1,11 @@
 from post import PostComposer
 import random
 
+fortunes = open('fortunes').read().split('\n%\n')
+
 class FortuneComposer(PostComposer):
   def __init__(self):
-    self.fortunes = open('fortunes').read().split('\n%\n')
+    self.fortunes = fortunes
     for fortune in self.fortunes:
       if len(fortune) > 140:
         self.fortunes.remove(fortune)
