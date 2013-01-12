@@ -15,6 +15,8 @@ class ReplyController(post.PostController):
       return False
     if not post_object['entities'].has_key('user_mentions'):
       return False
+    if post_object.has_key['retweeted_status']:
+      return False
     for user_mention in post_object['entities']['user_mentions']:
       if user_mention['id_str'] == self.current_user['id_str']:
         return True
@@ -26,6 +28,8 @@ class ReplyController(post.PostController):
     if not post_object.has_key('entities'):
       return 0
     if not post_object['entities'].has_key('user_mentions'):
+      return 0
+    if post_object.has_key['retweeted_status']:
       return 0
     for user_mention in post_object['entities']['user_mentions']:
       if user_mention['id_str'] == self.current_user['id_str']:

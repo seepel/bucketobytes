@@ -35,7 +35,7 @@ class PostController(object):
     one_day = 60.*60.*24./float(time_step)
     if simulate:
       one_day /= 60
-    return 22./one_day
+    return 12./one_day
 
   def isCurrentUser(self, post_object):
     if self.current_user == None:
